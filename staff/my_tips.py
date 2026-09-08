@@ -1,15 +1,12 @@
 """
-Staff self-service: enter your PIN, see your own tips and upcoming shifts.
-No admin password needed -- this is intentionally separate and scoped to
-one staff member's own data only, using the PIN issued by the manager
-in Staff & Schedule.
+Staff self-service: enter your PIN, see ONLY your own tips.
+Shifts are on a separate page (my_shifts.py) so this stays focused.
 """
 import streamlit as st
-from datetime import date
 from lib.db import query
 from lib.utils import format_ugx
 
-st.title("🧾 My Tips & Shifts")
+st.title("🧾 My Tips")
 
 if "staff_id" not in st.session_state:
     st.session_state.staff_id = None
@@ -52,15 +49,3 @@ if tips:
         st.write(f"{t['created_at'].strftime('%d %b, %H:%M')} — {format_ugx(float(t['amount']))} ({t['order_number']})")
 else:
     st.caption("No tips recorded for this period yet.")
-
-st.divider()
-st.subheader("📅 My upcoming shifts")
-shifts = query(
-    """select * from shifts where staff_id = %s and shift_date >= %s order by shift_date, start_time limit 10""",
-    (st.session_state.staff_id, date.today()),
-)
-if shifts:
-    for s in shifts:
-        st.write(f"{s['shift_date'].strftime('%a, %d %b')} — {s['start_time']}–{s['end_time']}")
-else:
-    st.caption("No upcoming shifts scheduled.")
