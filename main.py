@@ -1,9 +1,10 @@
 """
-Main entry point. Uses st.navigation so admin pages are genuinely absent
-from the sidebar for guests -- not just password-gated after being visible.
+Main entry point. Uses st.navigation so admin AND staff pages are
+genuinely absent from the sidebar until the correct login happens --
+guests only ever see Menu & Order / My Order Status.
 """
 import streamlit as st
-from lib.nav import is_admin, admin_login_widget
+from lib.nav import is_admin, is_staff, admin_login_widget
 
 st.set_page_config(page_title="El Nivel Bar & Lounge", page_icon="🍹", layout="centered")
 
@@ -30,7 +31,8 @@ staff_pages = [
 pages_to_show = list(guest_pages)
 if is_admin():
     pages_to_show += admin_pages
-pages_to_show += staff_pages
+if is_staff():
+    pages_to_show += staff_pages
 
 pg = st.navigation(pages_to_show, position="sidebar")
 
