@@ -16,11 +16,17 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
     color: #f2ead9;
 }
 
-/* ---- hide default Streamlit chrome ---- */
-#MainMenu, footer, header { visibility: hidden; }
+/* ---- Streamlit chrome ----
+   NEVER hide `header`: on phones the sidebar open/close toggle lives
+   inside the header. Hiding it makes the cart/checkout sidebar
+   unreachable for guests. Menus and footer only. */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
 [data-testid="stHeader"] { background: transparent; }
+[data-testid="stToolbar"] { display: none; }
+[data-testid="stDecoration"] { display: none; }
 
-.main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
+.main .block-container { max-width: 640px; padding-top: 3.5rem; padding-bottom: 6rem; }
 @media (max-width: 640px) {
     .main .block-container { padding-left: 1rem; padding-right: 1rem; }
 }
