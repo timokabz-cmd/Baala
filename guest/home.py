@@ -1,5 +1,7 @@
-"""Guest-facing menu + cart + WhatsApp checkout. Styled with El Nivel's
-actual brand palette; includes a persistent sidebar cart summary."""
+"""Guest-facing menu + cart + WhatsApp checkout. The entire cart and
+checkout flow (including optional tip, linked to a specific staff
+member) lives in the sidebar, so it's reachable at any scroll position
+without hunting through the menu list."""
 import streamlit as st
 from lib.db import query, execute
 from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_link
@@ -49,35 +51,119 @@ if "cart" not in st.session_state:
 if "order_number_last" not in st.session_state:
     st.session_state.order_number_last = None
 
-
-def render_sidebar_cart():
-    """Always-visible cart summary in the sidebar, so guests don't have to
-    scroll through the whole menu to reach checkout -- it's pinned no
-    matter where they are on the page."""
-    cart = st.session_state.cart
-    with st.sidebar:
-        st.markdown("### 🛒 Your Order")
-        if not cart:
-            st.caption("Cart is empty — add items to get started.")
-        else:
-            subtotal = 0
-            count = 0
-            for c in cart.values():
-                subtotal += c["price"] * c["quantity"]
-                count += c["quantity"]
-            st.metric("Items", count)
-            st.metric("Subtotal", format_ugx(subtotal))
-            st.caption("Scroll down to review and checkout ⬇️")
-
-
-render_sidebar_cart()
-
 table_slug = st.query_params.get("table", None)
 current_table = None
 if table_slug:
     rows = query("select * from tables where qr_slug = %s and is_active = true", (table_slug,))
     if rows:
         current_table = rows[0]
+
+
+def render_sidebar_checkout():
+    """Full checkout flow -- cart summary, service type, optional tip
+    with waiter selection, and the WhatsApp send button -- all pinned
+    in the sidebar so guests never have to scroll the menu to check out."""
+    cart = st.session_state.cart
+    with st.sidebar:
+        st.markdown("### 🛒 Your Order")
+        if not cart:
+            st.caption("Cart is empty — tap + on any item to add it.")
+            return
+
+        subtotal = 0
+        cart_items = []
+        max_wait = 0
+        for c in cart.values():
+            line_total = c["price"] * c["quantity"]
+            subtotal += line_total
+            max_wait = max(max_wait, c["estimated_minutes"])
+            cart_items.append(
+                {"name": c["name"], "quantity": c["quantity"], "unit_price": c["price"], "line_total": line_total}
+            )
+
+        for c in cart_items:
+            st.caption(f"{c['quantity']}x {c['name']} — {format_ugx(c['line_total'])}")
+
+        st.write(f"**Subtotal: {format_ugx(subtotal)}**")
+        st.caption(f"⏱️ ~{max_wait} min wait")
+
+        service_type = st.radio("Served as", ["Dine-in", "Takeaway"], horizontal=True, key="sb_service_type")
+
+        table_number = None
+        if service_type == "Dine-in":
+            table_number = current_table["label"] if current_table else st.text_input(
+                "Table number", key="sb_table_number"
+            )
+
+        st.divider()
+        st.caption("💛 Add a tip (optional)")
+        add_tip = st.checkbox("Add a tip for your server", key="sb_add_tip")
+        tip_amount = 0
+        waiter_id = None
+        if add_tip:
+            tip_amount = st.number_input("Tip amount (UGX)", min_value=0, step=1000, key="sb_tip_amount")
+            staff = query(
+                "select * from staff where is_active = true and role in ('waiter','bartender') order by name"
+            )
+            if staff:
+                staff_options = {s["name"]: s["id"] for s in staff}
+                waiter_name = st.selectbox("Who served you?", list(staff_options.keys()), key="sb_waiter")
+                waiter_id = staff_options.get(waiter_name)
+            else:
+                st.caption("No staff on file yet — tip will be recorded without a specific server.")
+
+        total = subtotal + tip_amount
+        if tip_amount:
+            st.write(f"**Total (incl. tip): {format_ugx(total)}**")
+
+        notes = st.text_input("Notes for kitchen/bar (optional)", key="sb_notes")
+
+        if st.button("📲 Send Order via WhatsApp", type="primary", use_container_width=True):
+            order_number = generate_order_number()
+            table_id = current_table["id"] if current_table else None
+            service_key = "dine_in" if service_type == "Dine-in" else "takeaway"
+
+            order_row = execute(
+                """insert into orders (order_number, table_id, service_type, status, subtotal, tip_amount, total, notes, waiter_id)
+                   values (%s, %s, %s, 'pending', %s, %s, %s, %s, %s) returning id""",
+                (order_number, table_id, service_key, subtotal, tip_amount, total, notes, waiter_id),
+                returning=True,
+            )
+            order_id = order_row["id"]
+
+            for item_id, c in cart.items():
+                execute(
+                    """insert into order_items (order_id, menu_item_id, item_name, unit_price, quantity, line_total)
+                       values (%s, %s, %s, %s, %s, %s)""",
+                    (order_id, item_id, c["name"], c["price"], c["quantity"], c["price"] * c["quantity"]),
+                )
+                menu_row = query("select inventory_id from menu_items where id = %s", (item_id,), fetch="one")
+                if menu_row and menu_row.get("inventory_id"):
+                    execute(
+                        "update inventory set quantity_on_hand = quantity_on_hand - %s, updated_at = now() where id = %s",
+                        (c["quantity"], menu_row["inventory_id"]),
+                    )
+                    execute(
+                        "insert into inventory_movements (inventory_id, change_qty, reason) values (%s, %s, 'sale')",
+                        (menu_row["inventory_id"], -c["quantity"]),
+                    )
+
+            if tip_amount > 0 and waiter_id:
+                execute(
+                    "insert into tips (order_id, staff_id, amount, method) values (%s, %s, %s, 'added_to_bill')",
+                    (order_id, waiter_id, tip_amount),
+                )
+
+            label = table_number or "Takeaway"
+            link = build_whatsapp_order_link(WHATSAPP_NUMBER, order_number, label, cart_items, total, notes)
+            st.session_state.order_number_last = order_number
+            st.session_state.cart = {}
+            st.success(f"Order {order_number} placed!")
+            st.link_button("Open WhatsApp", link, use_container_width=True)
+            st.caption("Check status in **My Order Status**.")
+
+
+render_sidebar_checkout()
 
 st.title(f"🍹 {BUSINESS_NAME}")
 st.caption("Kiwatule, Kampala")
@@ -126,69 +212,3 @@ else:
             elif it["id"] in st.session_state.cart:
                 del st.session_state.cart[it["id"]]
             st.divider()
-
-cart = st.session_state.cart
-if cart:
-    st.subheader("🛒 Your Order")
-    subtotal = 0
-    cart_items = []
-    max_wait = 0
-    for item_id, c in cart.items():
-        line_total = c["price"] * c["quantity"]
-        subtotal += line_total
-        max_wait = max(max_wait, c["estimated_minutes"])
-        cart_items.append(
-            {"name": c["name"], "quantity": c["quantity"], "unit_price": c["price"], "line_total": line_total}
-        )
-        st.write(f"{c['quantity']}x {c['name']} — {format_ugx(line_total)}")
-
-    st.write(f"**Subtotal: {format_ugx(subtotal)}**")
-    st.caption(f"⏱️ Estimated wait: ~{max_wait} min")
-
-    service_type = st.radio("How would you like this served?", ["Dine-in", "Takeaway"], horizontal=True)
-
-    table_number = None
-    if service_type == "Dine-in":
-        table_number = current_table["label"] if current_table else st.text_input("Table number (if known)")
-
-    notes = st.text_input("Any notes for the kitchen/bar? (optional)")
-
-    if st.button("📲 Send Order via WhatsApp", type="primary", use_container_width=True):
-        order_number = generate_order_number()
-        table_id = current_table["id"] if current_table else None
-        service_key = "dine_in" if service_type == "Dine-in" else "takeaway"
-
-        order_row = execute(
-            """insert into orders (order_number, table_id, service_type, status, subtotal, total, notes)
-               values (%s, %s, %s, 'pending', %s, %s, %s) returning id""",
-            (order_number, table_id, service_key, subtotal, subtotal, notes),
-            returning=True,
-        )
-        order_id = order_row["id"]
-
-        for item_id, c in cart.items():
-            execute(
-                """insert into order_items (order_id, menu_item_id, item_name, unit_price, quantity, line_total)
-                   values (%s, %s, %s, %s, %s, %s)""",
-                (order_id, item_id, c["name"], c["price"], c["quantity"], c["price"] * c["quantity"]),
-            )
-            menu_row = query("select inventory_id from menu_items where id = %s", (item_id,), fetch="one")
-            if menu_row and menu_row.get("inventory_id"):
-                execute(
-                    "update inventory set quantity_on_hand = quantity_on_hand - %s, updated_at = now() where id = %s",
-                    (c["quantity"], menu_row["inventory_id"]),
-                )
-                execute(
-                    "insert into inventory_movements (inventory_id, change_qty, reason) values (%s, %s, 'sale')",
-                    (menu_row["inventory_id"], -c["quantity"]),
-                )
-
-        label = table_number or "Takeaway"
-        link = build_whatsapp_order_link(WHATSAPP_NUMBER, order_number, label, cart_items, subtotal, notes)
-        st.session_state.order_number_last = order_number
-        st.success(f"Order {order_number} placed! Tap below to notify us on WhatsApp.")
-        st.link_button("Open WhatsApp", link, use_container_width=True)
-        st.caption("Track your order status in the **My Order Status** page (sidebar).")
-        st.session_state.cart = {}
-else:
-    st.info("Add items above to build your order.")
