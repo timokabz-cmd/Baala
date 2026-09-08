@@ -72,7 +72,11 @@ STATUS_COLORS = {
 }
 
 STATUS_LABELS = {
-    "pending": "🕐 Pending",
-    "confirmed": "✅ Confirmed",
-    "preparing": "👨‍🍳 Preparing",
-    "ready": "🔔
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "preparing": "Preparing",
+    "ready": "Ready",
+    "served": "Served",
+    "paid": "Paid",
+    "cancelled": "Cancelled",
+}
