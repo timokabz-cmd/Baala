@@ -1,6 +1,6 @@
-"""Guest-facing menu + cart + WhatsApp checkout. Redesigned to a warm,
-hospitality-style look; adds service type (dine-in/takeaway), estimated
-wait times, and depletes linked inventory on order."""
+"""Guest-facing menu + cart + WhatsApp checkout. Styled with El Nivel's
+actual brand palette (black/cream/gold from their menu design) with
+forced text colors so nothing disappears against the background."""
 import streamlit as st
 from lib.db import query, execute
 from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_link
@@ -8,17 +8,39 @@ from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_li
 BUSINESS_NAME = "El Nivel Bar & Lounge"
 WHATSAPP_NUMBER = st.secrets.get("whatsapp_number", "256700000000")
 
-# ---------- Light warm-toned styling (mirrors the Vennie Suites feel) ----------
+# ---------- El Nivel brand palette: near-black, cream, gold accent ----------
 st.markdown(
     """
     <style>
-    .stApp { background-color: #f4ead9; }
-    h1, h2, h3 { color: #3b2418; font-family: Georgia, 'Times New Roman', serif; }
-    .item-name { color: #2f6b3a; font-weight: 600; }
-    .stButton>button {
-        background-color: #3b2418; color: #f4ead9; border-radius: 8px; border: none;
+    .stApp { background-color: #1a1512; }
+    section[data-testid="stSidebar"] { background-color: #120e0c; }
+
+    h1, h2, h3 {
+        color: #e8c77a !important;
+        font-family: Georgia, 'Times New Roman', serif;
     }
-    .stButton>button:hover { background-color: #5a3a26; color: #f4ead9; }
+    p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"] {
+        color: #f0e6d2 !important;
+    }
+    .item-name { color: #e8c77a !important; font-weight: 700; font-size: 1.05rem; }
+    .item-price { color: #d4a94a !important; }
+
+    div[role="radiogroup"] label, div[role="radiogroup"] p {
+        color: #f0e6d2 !important;
+    }
+    div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
+        border-color: #d4a94a !important;
+    }
+
+    .stButton>button {
+        background-color: #d4a94a; color: #1a1512; border-radius: 8px;
+        border: none; font-weight: 600;
+    }
+    .stButton>button:hover { background-color: #e8c77a; color: #1a1512; }
+
+    div[data-testid="stNumberInput"] input { color: #1a1512 !important; }
+
+    hr { border-color: #3a2e24 !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -37,7 +59,7 @@ if table_slug:
         current_table = rows[0]
 
 st.title(f"🍹 {BUSINESS_NAME}")
-st.caption("Kampala")
+st.caption("Kiwatule, Kampala")
 if current_table:
     st.info(f"📍 {current_table['label']}")
 
@@ -63,7 +85,10 @@ else:
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.markdown(f"<span class='item-name'>{it['name']}</span>", unsafe_allow_html=True)
-                st.caption(f"{format_ugx(float(it['price']))} · ~{wait} min")
+                st.markdown(
+                    f"<span class='item-price'>{format_ugx(float(it['price']))} · ~{wait} min</span>",
+                    unsafe_allow_html=True,
+                )
                 if it.get("description"):
                     st.caption(it["description"])
             with col2:
