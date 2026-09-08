@@ -1,10 +1,6 @@
 """
 Main entry point. Uses st.navigation so admin pages are genuinely absent
 from the sidebar for guests -- not just password-gated after being visible.
-
-IMPORTANT: with st.navigation, individual page files under pages/ are no
-longer auto-registered by Streamlit's old magic folder behavior. This file
-is now what should be set as the app's main file in Streamlit Cloud.
 """
 import streamlit as st
 from lib.nav import is_admin, admin_login_widget
@@ -27,14 +23,14 @@ admin_pages = [
 ]
 
 staff_pages = [
-    st.Page("staff/my_tips.py", title="My Tips & Shifts", icon="🧾"),
+    st.Page("staff/my_tips.py", title="My Tips", icon="🧾"),
+    st.Page("staff/my_shifts.py", title="My Shifts", icon="📅"),
 ]
 
-# Guests only ever see guest_pages. Admin pages appear ONLY once logged in.
 pages_to_show = list(guest_pages)
 if is_admin():
     pages_to_show += admin_pages
-pages_to_show += staff_pages  # staff PIN login happens inside that page itself
+pages_to_show += staff_pages
 
 pg = st.navigation(pages_to_show, position="sidebar")
 
