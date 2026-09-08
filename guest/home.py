@@ -1,6 +1,5 @@
 """Guest-facing menu + cart + WhatsApp checkout. Styled with El Nivel's
-actual brand palette (black/cream/gold from their menu design) with
-forced text colors so nothing disappears against the background."""
+actual brand palette; includes a persistent sidebar cart summary."""
 import streamlit as st
 from lib.db import query, execute
 from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_link
@@ -8,7 +7,6 @@ from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_li
 BUSINESS_NAME = "El Nivel Bar & Lounge"
 WHATSAPP_NUMBER = st.secrets.get("whatsapp_number", "256700000000")
 
-# ---------- El Nivel brand palette: near-black, cream, gold accent ----------
 st.markdown(
     """
     <style>
@@ -50,6 +48,29 @@ if "cart" not in st.session_state:
     st.session_state.cart = {}
 if "order_number_last" not in st.session_state:
     st.session_state.order_number_last = None
+
+
+def render_sidebar_cart():
+    """Always-visible cart summary in the sidebar, so guests don't have to
+    scroll through the whole menu to reach checkout -- it's pinned no
+    matter where they are on the page."""
+    cart = st.session_state.cart
+    with st.sidebar:
+        st.markdown("### 🛒 Your Order")
+        if not cart:
+            st.caption("Cart is empty — add items to get started.")
+        else:
+            subtotal = 0
+            count = 0
+            for c in cart.values():
+                subtotal += c["price"] * c["quantity"]
+                count += c["quantity"]
+            st.metric("Items", count)
+            st.metric("Subtotal", format_ugx(subtotal))
+            st.caption("Scroll down to review and checkout ⬇️")
+
+
+render_sidebar_cart()
 
 table_slug = st.query_params.get("table", None)
 current_table = None
