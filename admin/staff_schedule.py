@@ -1,4 +1,7 @@
-"""Staff list, shift schedule, and PIN assignment for staff self-service login."""
+"""Staff list, shift schedule, and PIN management for staff self-service login.
+PINs are always visible to the manager here (not just at creation) so they
+can be relayed to staff verbally at any time, including if a staff member
+forgets theirs."""
 import streamlit as st
 from datetime import date, timedelta
 import random
@@ -56,18 +59,33 @@ with tab1:
         st.info("Add staff members in the Staff List tab first.")
 
 with tab2:
+    st.caption("PINs are shown here so you can tell staff their login PIN for **My Tips & Shifts** at any time — including if they forget it.")
     staff_all = query("select * from staff order by name")
     for s in staff_all:
         status = "🟢" if s["is_active"] else "⚪"
         with st.container(border=True):
-            st.write(f"{status} **{s['name']}** — {s['role']} — {s.get('phone') or '—'}")
-            if s.get("pin"):
-                st.caption(f"PIN: {s['pin']} (staff use this to log into 'My Tips & Shifts')")
-            else:
-                if st.button(f"Generate PIN for {s['name']}", key=f"genpin_{s['id']}"):
-                    new_pin = str(random.randint(1000, 9999))
-                    execute("update staff set pin = %s where id = %s", (new_pin, s["id"]))
-                    st.rerun()
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.write(f"{status} **{s['name']}** — {s['role']} — {s.get('phone') or '—'}")
+            with col2:
+                if s.get("pin"):
+                    st.markdown(f"**PIN: `{s['pin']}`**")
+                else:
+                    st.caption("No PIN set")
+
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if not s.get("pin"):
+                    if st.button(f"Generate PIN", key=f"genpin_{s['id']}"):
+                        new_pin = str(random.randint(1000, 9999))
+                        execute("update staff set pin = %s where id = %s", (new_pin, s["id"]))
+                        st.rerun()
+            with btn_col2:
+                if s.get("pin"):
+                    if st.button(f"Reset PIN", key=f"resetpin_{s['id']}"):
+                        new_pin = str(random.randint(1000, 9999))
+                        execute("update staff set pin = %s where id = %s", (new_pin, s["id"]))
+                        st.rerun()
 
     st.divider()
     st.subheader("➕ Add staff member")
@@ -78,5 +96,5 @@ with tab2:
         if name:
             pin = str(random.randint(1000, 9999))
             execute("insert into staff (name, role, phone, pin) values (%s, %s, %s, %s)", (name, role, phone, pin))
-            st.success(f"Added {name} — PIN: {pin}")
+            st.success(f"Added {name} — PIN: **{pin}** (also visible above anytime)")
             st.rerun()
