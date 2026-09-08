@@ -1,50 +1,16 @@
-"""Guest-facing menu + cart + WhatsApp checkout. The entire cart and
-checkout flow (including optional tip, linked to a specific staff
-member) lives in the sidebar, so it's reachable at any scroll position
-without hunting through the menu list."""
+"""Premium guest-facing menu + cart + WhatsApp checkout for El Nivel.
+Same logic as the original home.py (same DB queries, same session keys,
+same WhatsApp flow) with a high-end visual restyle via lib/theme.py.
+"""
 import streamlit as st
 from lib.db import query, execute
+from lib.theme import inject_theme
 from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_link
 
 BUSINESS_NAME = "El Nivel Bar & Lounge"
 WHATSAPP_NUMBER = st.secrets.get("whatsapp_number", "256700000000")
 
-st.markdown(
-    """
-    <style>
-    .stApp { background-color: #1a1512; }
-    section[data-testid="stSidebar"] { background-color: #120e0c; }
-
-    h1, h2, h3 {
-        color: #e8c77a !important;
-        font-family: Georgia, 'Times New Roman', serif;
-    }
-    p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"] {
-        color: #f0e6d2 !important;
-    }
-    .item-name { color: #e8c77a !important; font-weight: 700; font-size: 1.05rem; }
-    .item-price { color: #d4a94a !important; }
-
-    div[role="radiogroup"] label, div[role="radiogroup"] p {
-        color: #f0e6d2 !important;
-    }
-    div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
-        border-color: #d4a94a !important;
-    }
-
-    .stButton>button {
-        background-color: #d4a94a; color: #1a1512; border-radius: 8px;
-        border: none; font-weight: 600;
-    }
-    .stButton>button:hover { background-color: #e8c77a; color: #1a1512; }
-
-    div[data-testid="stNumberInput"] input { color: #1a1512 !important; }
-
-    hr { border-color: #3a2e24 !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+inject_theme()
 
 if "cart" not in st.session_state:
     st.session_state.cart = {}
@@ -60,14 +26,13 @@ if table_slug:
 
 
 def render_sidebar_checkout():
-    """Full checkout flow -- cart summary, service type, optional tip
-    with waiter selection, and the WhatsApp send button -- all pinned
-    in the sidebar so guests never have to scroll the menu to check out."""
+    """Cart + checkout pinned to the sidebar, styled to match the theme."""
     cart = st.session_state.cart
     with st.sidebar:
-        st.markdown("### 🛒 Your Order")
+        st.markdown("### Your Order")
+        st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
         if not cart:
-            st.caption("Cart is empty — tap + on any item to add it.")
+            st.caption("Your order is empty - tap + on any dish or drink.")
             return
 
         subtotal = 0
@@ -82,10 +47,15 @@ def render_sidebar_checkout():
             )
 
         for c in cart_items:
-            st.caption(f"{c['quantity']}x {c['name']} — {format_ugx(c['line_total'])}")
+            st.caption(f"{c['quantity']} × {c['name']} - {format_ugx(c['line_total'])}")
 
-        st.write(f"**Subtotal: {format_ugx(subtotal)}**")
-        st.caption(f"⏱️ ~{max_wait} min wait")
+        st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p style='font-family:Playfair Display,serif;color:#e6c87a;font-size:1.15rem;'>"
+            f"Subtotal &nbsp;·&nbsp; {format_ugx(subtotal)}</p>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"Estimated wait ~{max_wait} min")
 
         service_type = st.radio("Served as", ["Dine-in", "Takeaway"], horizontal=True, key="sb_service_type")
 
@@ -95,8 +65,8 @@ def render_sidebar_checkout():
                 "Table number", key="sb_table_number"
             )
 
-        st.divider()
-        st.caption("💛 Add a tip (optional)")
+        st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+        st.caption("ADD A TIP (OPTIONAL)")
         add_tip = st.checkbox("Add a tip for your server", key="sb_add_tip")
         tip_amount = 0
         waiter_id = None
@@ -110,15 +80,19 @@ def render_sidebar_checkout():
                 waiter_name = st.selectbox("Who served you?", list(staff_options.keys()), key="sb_waiter")
                 waiter_id = staff_options.get(waiter_name)
             else:
-                st.caption("No staff on file yet — tip will be recorded without a specific server.")
+                st.caption("Tip will be recorded without a specific server.")
 
         total = subtotal + tip_amount
         if tip_amount:
-            st.write(f"**Total (incl. tip): {format_ugx(total)}**")
+            st.markdown(
+                f"<p style='font-family:Playfair Display,serif;color:#e6c87a;font-size:1.1rem;'>"
+                f"Total incl. tip &nbsp;·&nbsp; {format_ugx(total)}</p>",
+                unsafe_allow_html=True,
+            )
 
-        notes = st.text_input("Notes for kitchen/bar (optional)", key="sb_notes")
+        notes = st.text_input("Notes for kitchen / bar (optional)", key="sb_notes")
 
-        if st.button("📲 Send Order via WhatsApp", type="primary", use_container_width=True):
+        if st.button("SEND ORDER VIA WHATSAPP", type="primary", use_container_width=True):
             order_number = generate_order_number()
             table_id = current_table["id"] if current_table else None
             service_key = "dine_in" if service_type == "Dine-in" else "takeaway"
@@ -160,18 +134,24 @@ def render_sidebar_checkout():
             st.session_state.cart = {}
             st.success(f"Order {order_number} placed!")
             st.link_button("Open WhatsApp", link, use_container_width=True)
-            st.caption("Check status in **My Order Status**.")
+            st.caption("Track it under My Order Status.")
 
 
 render_sidebar_checkout()
 
-st.title(f"🍹 {BUSINESS_NAME}")
-st.caption("Kiwatule, Kampala")
+# ---------- hero ----------
+st.markdown("<p class='hero-eyebrow'>Kiwatule · Kampala</p>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 class='hero-title'>El Nivel<br>Bar &amp; Lounge</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown("<p class='hero-sub'>Scan · Order · Sip</p>", unsafe_allow_html=True)
 if current_table:
-    st.info(f"📍 {current_table['label']}")
+    st.markdown(f"<span class='table-badge'>Table {current_table['label']}</span>", unsafe_allow_html=True)
+st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
 
-category = st.radio("Browse", ["🍽️ Restaurant", "🍸 Bar"], horizontal=True, label_visibility="collapsed")
-cat_key = "restaurant" if "Restaurant" in category else "bar"
+category = st.radio("Browse", ["Restaurant", "Bar"], horizontal=True, label_visibility="collapsed")
+cat_key = "restaurant" if category == "Restaurant" else "bar"
 
 items = query(
     "select * from menu_items where category = %s and is_available = true order by subcategory, name",
@@ -179,26 +159,30 @@ items = query(
 )
 
 if not items:
-    st.info("No items available in this category right now.")
+    st.info("This menu is being refreshed - please ask our team for today's selection.")
 else:
     groups = {}
     for it in items:
         groups.setdefault(it.get("subcategory") or "Menu", []).append(it)
 
     for group_name, group_items in groups.items():
-        st.subheader(group_name.title())
+        st.markdown(f"<p class='premium-label'>{group_name}</p>", unsafe_allow_html=True)
         for it in group_items:
             wait = it.get("estimated_minutes") or 5
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"<span class='item-name'>{it['name']}</span>", unsafe_allow_html=True)
+            desc = it.get("description") or ""
+            desc_html = f"<div class='item-desc'>{desc}</div>" if desc else ""
+
+            col_card, col_qty = st.columns([3.2, 1])
+            with col_card:
                 st.markdown(
-                    f"<span class='item-price'>{format_ugx(float(it['price']))} · ~{wait} min</span>",
+                    "<div class='menu-card'>"
+                    f"<div class='item-name'>{it['name']}</div>"
+                    f"{desc_html}"
+                    f"<div class='item-price'>{format_ugx(float(it['price']))} &nbsp;·&nbsp; ~{wait} min</div>"
+                    "</div>",
                     unsafe_allow_html=True,
                 )
-                if it.get("description"):
-                    st.caption(it["description"])
-            with col2:
+            with col_qty:
                 qty = st.number_input(
                     "Qty", min_value=0, max_value=20, value=0, key=f"qty_{it['id']}", label_visibility="collapsed"
                 )
@@ -211,4 +195,4 @@ else:
                 }
             elif it["id"] in st.session_state.cart:
                 del st.session_state.cart[it["id"]]
-            st.divider()
+        st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
