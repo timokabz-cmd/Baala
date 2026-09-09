@@ -27,6 +27,18 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
     visibility: visible !important;
     color: #e6c87a !important;
 }
+/* Hide Streamlit Cloud's own chrome: the Fork/GitHub/menu toolbar and
+   the "Hosted with Streamlit" viewer badge. These are separate elements
+   from stHeader, which is why they survived the earlier fix. */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+.stAppDeployButton,
+[data-testid="stAppViewerBadge"],
+a[href*="streamlit.io"] {
+    visibility: hidden !important;
+    display: none !important;
+}
 
 .main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
 @media (max-width: 640px) {
