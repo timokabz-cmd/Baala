@@ -16,8 +16,18 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
     color: #f2ead9;
 }
 
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stHeader"] { background: transparent; }
+#MainMenu, footer { visibility: hidden; }
+[data-testid="stHeader"] {
+    background: transparent;
+}
+/* Keep the sidebar toggle control visible and tappable -- hiding the
+   entire header (as an earlier version of this theme did) also hides
+   this button, locking users out of the sidebar (cart, order status,
+   staff/admin login) entirely. */
+[data-testid="stHeader"] button {
+    visibility: visible !important;
+    color: #e6c87a !important;
+}
 
 .main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
 @media (max-width: 640px) {
