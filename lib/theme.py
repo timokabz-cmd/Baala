@@ -16,22 +16,14 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
     color: #f2ead9;
 }
 
-/* ---- Streamlit chrome ----
-   NEVER hide `header`: on phones the sidebar open/close toggle lives
-   inside the header. Hiding it makes the cart/checkout sidebar
-   unreachable for guests. Menus and footer only. */
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
+#MainMenu, footer, header { visibility: hidden; }
 [data-testid="stHeader"] { background: transparent; }
-[data-testid="stToolbar"] { display: none; }
-[data-testid="stDecoration"] { display: none; }
 
-.main .block-container { max-width: 640px; padding-top: 3.5rem; padding-bottom: 6rem; }
+.main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
 @media (max-width: 640px) {
     .main .block-container { padding-left: 1rem; padding-right: 1rem; }
 }
 
-/* ---- typography ---- */
 h1, h2, h3 {
     font-family: 'Playfair Display', Georgia, serif !important;
     color: #e6c87a !important;
@@ -42,7 +34,6 @@ p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"], 
     color: #cbbb9d;
 }
 
-/* ---- hero ---- */
 .hero-eyebrow {
     letter-spacing: 0.42em; text-transform: uppercase; color: #8a7a5e;
     font-size: 0.68rem; font-weight: 500;
@@ -65,7 +56,6 @@ p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"], 
     letter-spacing: 0.16em; text-transform: uppercase; margin-top: 0.9rem;
 }
 
-/* ---- menu cards ---- */
 .premium-label {
     font-size: 0.7rem; letter-spacing: 0.3em; text-transform: uppercase;
     color: #a89880; margin: 1.7rem 0 0.7rem; font-weight: 500;
@@ -80,7 +70,6 @@ p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"], 
 .item-desc { color: #9d8d72; font-size: 0.84rem; font-weight: 300; margin-top: 0.15rem; }
 .item-price { color: #c9a227; letter-spacing: 0.06em; font-size: 0.92rem; font-weight: 500; margin-top: 0.3rem; }
 
-/* ---- category pills ---- */
 div[role="radiogroup"] {
     gap: 0.4rem; background: rgba(0,0,0,0.3); padding: 0.3rem;
     border-radius: 999px; border: 1px solid rgba(201,162,39,0.14);
@@ -90,7 +79,6 @@ div[role="radiogroup"] label p { color: #d8cbaa !important; font-weight: 400; }
 div[role="radiogroup"] label:has(input:checked) { background: linear-gradient(135deg, #e6c87a, #c9a227) !important; }
 div[role="radiogroup"] label:has(input:checked) p { color: #171106 !important; font-weight: 600; }
 
-/* ---- buttons ---- */
 .stButton > button {
     background: linear-gradient(135deg, #e6c87a 0%, #c9a227 100%) !important;
     color: #171106 !important; border: none !important; border-radius: 10px !important;
@@ -101,7 +89,6 @@ div[role="radiogroup"] label:has(input:checked) p { color: #171106 !important; f
 .stButton > button:hover { filter: brightness(1.08); color: #171106 !important; }
 .stButton > button:active { filter: brightness(0.96); }
 
-/* ---- sidebar ---- */
 section[data-testid="stSidebar"] {
     background: #0b0806;
     border-right: 1px solid rgba(201,162,39,0.12);
@@ -114,7 +101,6 @@ section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] .stCapt
 }
 .stSidebar .gold-rule { margin: 0.8rem 0; }
 
-/* ---- inputs ---- */
 div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input,
 div[data-testid="stSelectbox"] > div, div[data-baseweb="select"] > div {
     color: #f2ead9 !important; background-color: #1c150f !important;
@@ -126,7 +112,6 @@ div[data-baseweb="checkbox"] span { color: #cbbb9d !important; }
 div[data-baseweb="checkbox"] > div:first-child { border-color: #c9a227 !important; }
 hr { border-color: rgba(201,162,39,0.14) !important; }
 
-/* ---- alerts ---- */
 div[data-testid="stInfo"] {
     background: rgba(201,162,39,0.08); border: 1px solid rgba(201,162,39,0.25);
 }
