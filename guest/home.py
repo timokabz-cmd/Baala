@@ -152,6 +152,29 @@ st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
 category = st.radio("Browse", ["Restaurant", "Bar"], horizontal=True, label_visibility="collapsed")
 cat_key = "restaurant" if category == "Restaurant" else "bar"
 
+# ---------- visible on-page cart indicator (in addition to sidebar) ----------
+if st.session_state.cart:
+    _count = sum(c["quantity"] for c in st.session_state.cart.values())
+    _subtotal = sum(c["price"] * c["quantity"] for c in st.session_state.cart.values())
+    st.markdown(
+        f"""<div style='
+            background: linear-gradient(135deg, rgba(230,200,122,0.14), rgba(201,162,39,0.08));
+            border: 1px solid rgba(201,162,39,0.4);
+            border-radius: 12px;
+            padding: 0.7rem 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        '>
+            <span style='color:#e6c87a;font-weight:600;'>🛒 {_count} item{'s' if _count != 1 else ''} in your order</span>
+            <span style='color:#c9a227;font-weight:600;'>{format_ugx(_subtotal)}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    st.caption("Open the sidebar (top-left ›› arrow) to review and checkout.")
+    st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+
 items = query(
     "select * from menu_items where category = %s and is_available = true order by subcategory, name",
     (cat_key,),
