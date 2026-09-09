@@ -139,7 +139,6 @@ def render_sidebar_checkout():
 
 render_sidebar_checkout()
 
-# ---------- hero ----------
 st.markdown("<p class='hero-eyebrow'>Kiwatule · Kampala</p>", unsafe_allow_html=True)
 st.markdown(
     "<h1 class='hero-title'>El Nivel<br>Bar &amp; Lounge</h1>",
