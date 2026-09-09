@@ -2,7 +2,9 @@
 Cart and checkout now live INLINE on the main page (tap the cart banner
 to expand it) instead of only in the sidebar, so it's reachable without
 needing to know the sidebar exists. Same DB logic, same WhatsApp flow,
-same tip-to-waiter linking as before.
+same tip-to-waiter linking as before. Menu/table/staff lookups are now
+cached briefly so tapping a quantity doesn't re-hit the database (and
+the network round-trip to Supabase) on every single interaction.
 """
 import streamlit as st
 from lib.db import query, execute
@@ -21,12 +23,36 @@ if "order_number_last" not in st.session_state:
 if "show_checkout" not in st.session_state:
     st.session_state.show_checkout = False
 
+
+@st.cache_data(ttl=60)
+def get_table_by_slug(slug):
+    """Cached -- table info almost never changes mid-session."""
+    rows = query("select * from tables where qr_slug = %s and is_active = true", (slug,))
+    return rows[0] if rows else None
+
+
+@st.cache_data(ttl=30)
+def get_waiter_staff():
+    """Cached -- avoids a DB round-trip every time the tip checkbox area re-renders."""
+    return query(
+        "select * from staff where is_active = true and role in ('waiter','bartender') order by name"
+    )
+
+
+@st.cache_data(ttl=30)
+def get_menu_items(category):
+    """Cached for 30s -- the menu rarely changes mid-session, and without
+    this, every tap on a quantity +/- button re-queries Supabase over the
+    network (Uganda -> Frankfurt), which is what caused the ~20s lag
+    guests were seeing after tapping an item."""
+    return query(
+        "select * from menu_items where category = %s and is_available = true order by subcategory, name",
+        (category,),
+    )
+
+
 table_slug = st.query_params.get("table", None)
-current_table = None
-if table_slug:
-    rows = query("select * from tables where qr_slug = %s and is_active = true", (table_slug,))
-    if rows:
-        current_table = rows[0]
+current_table = get_table_by_slug(table_slug) if table_slug else None
 
 
 def render_sidebar_note():
@@ -94,9 +120,7 @@ def render_checkout_panel():
     waiter_id = None
     if add_tip:
         tip_amount = st.number_input("Tip amount (UGX)", min_value=0, step=1000, key="ck_tip_amount")
-        staff = query(
-            "select * from staff where is_active = true and role in ('waiter','bartender') order by name"
-        )
+        staff = get_waiter_staff()
         if staff:
             staff_options = {s["name"]: s["id"] for s in staff}
             waiter_name = st.selectbox("Who served you?", list(staff_options.keys()), key="ck_waiter")
@@ -190,10 +214,7 @@ if st.session_state.cart:
         render_checkout_panel()
     st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
 
-items = query(
-    "select * from menu_items where category = %s and is_available = true order by subcategory, name",
-    (cat_key,),
-)
+items = get_menu_items(cat_key)
 
 if not items:
     st.info("This menu is being refreshed - please ask our team for today's selection.")
