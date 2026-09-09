@@ -20,10 +20,9 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
 [data-testid="stHeader"] {
     background: transparent;
 }
-/* Keep the sidebar toggle control visible and tappable -- hiding the
-   entire header (as an earlier version of this theme did) also hides
-   this button, locking users out of the sidebar (cart, order status,
-   staff/admin login) entirely. */
+/* Keep the sidebar toggle control visible and tappable -- the previous
+   rule hid the entire header, which also hid this button, locking users
+   out of the sidebar (cart, order status, staff/admin login) entirely. */
 [data-testid="stHeader"] button {
     visibility: visible !important;
     color: #e6c87a !important;
@@ -96,8 +95,25 @@ div[role="radiogroup"] label:has(input:checked) p { color: #171106 !important; f
     font-weight: 600 !important; box-shadow: 0 4px 18px rgba(201,162,39,0.28);
     transition: filter 0.15s ease;
 }
-.stButton > button:hover { filter: brightness(1.08); color: #171106 !important; }
+/* Force dark text on ALL inner elements of the button -- Streamlit wraps
+   the label in nested <p>/<div> tags that otherwise inherit the lighter
+   body text color and wash out against the gold background. */
+.stButton > button, .stButton > button * {
+    color: #171106 !important;
+}
+.stButton > button:hover { filter: brightness(1.08); }
+.stButton > button:hover, .stButton > button:hover * { color: #171106 !important; }
 .stButton > button:active { filter: brightness(0.96); }
+
+/* Inline checkout panel (opened from the on-page cart banner) */
+.checkout-panel {
+    background: linear-gradient(160deg, #1d1610 0%, #130e0a 100%);
+    border: 1px solid rgba(201,162,39,0.28);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    margin: 0.6rem 0 1.2rem;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+}
 
 section[data-testid="stSidebar"] {
     background: #0b0806;
