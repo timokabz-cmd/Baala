@@ -1,36 +1,3 @@
-Good, useful to know it's not just your logged-in view — let's fix both properly.
-
-**1. Fork/GitHub bar** — I was wrong to assume this only shows to you. This is Streamlit Cloud's **"Hosted by Streamlit" toolbar**, which appears to *everyone* by default, not just the owner. It's controllable via a setting, not something guests can dismiss. Let's hide it properly with the correct CSS target (my earlier `[data-testid="stHeader"]` fix handled the header but missed this specific toolbar element, which Streamlit renders in a different container).
-
-**2. Cart delay + no delete option** — let's dig into why caching alone didn't fix the delay, and add a proper remove button per cart item.
-
-Let's fix the toolbar first:
-
-That confirms it — I never targeted the actual toolbar element (`stToolbar` / `stDeployButton` / viewer badge), only the header bar. Let's add the correct selectors:
-
-Now let's tackle the cart delay properly. The caching I added should have helped the *menu query*, but the real bottleneck may be something else — every widget interaction in Streamlit re-runs the **entire script**, including all the `st.markdown` HTML rendering for every single menu card (30+ items), not just the DB query. Let's check how many items are actually rendering per category, since that itself could be the lag if there's no pagination:
-
-The bar menu alone has ~100+ drink items across all those insert blocks. That's a lot of `st.markdown` + `st.number_input` widget pairs rendering on every single rerun — likely the real cause of the lag, more than the DB query itself. Let's fix this properly with Streamlit's `st.form`, which batches all the quantity inputs and only reruns once, on submit, rather than on every single `+` tap:
-
-Actually, wrapping the whole menu in a form changes behavior significantly (no live item-by-item feedback), which may not be what you want. A better, more surgical fix: since Bar has ~100 items but a guest only views one category at a time (Restaurant *or* Bar), the real fix is to **not render number inputs for items with 0 quantity as separate always-live widgets** — but actually, the simplest true fix for perceived speed is different: **the delay you're describing (~20 sec) is far larger than normal Streamlit rerun overhead** even for 100 widgets. This smells like it's still a network call happening somewhere per-tap. Let me check the full render loop for anything still querying live:
-
-Found the real bug — this is a critical one: **`value=0` is hardcoded** on every `number_input`. That means every rerun resets the widget back to displaying `0`, ignoring `st.session_state[f"qty_{it['id']}"]` which Streamlit already tracks automatically via the `key`. There's no explicit network delay bug — the actual problem is a **state/rerender conflict**: Streamlit is fighting itself between the hardcoded `value=0` and the widget's own session-state-backed value, which can cause exactly this kind of sluggish, delayed-looking behavior as it reconciles on each rerun.
-
-Let's fix this properly and add per-item delete/remove capability at the same time:
-
-Now let's add per-item remove buttons in the checkout panel itself, since that's the natural place a guest expects to edit their cart:
-
-Let's rebuild this section to include a remove (✕) button per line item, and make sure removing also resets the corresponding `qty_` widget key so the menu list reflects it correctly:
-
-There's a subtlety here: since `render_checkout_panel()` returns early if cart becomes empty, and we `del` mid-loop then `st.rerun()` immediately, that's safe — the rerun restarts the whole script fresh rather than continuing the now-stale loop. Let's verify:
-
-Clean. Let me do one more check — confirm the qty widget reset logic is safe (Streamlit disallows setting a widget's session-state key directly if the widget hasn't been instantiated yet in that run, but since we `st.rerun()` right after, the next full run will read the reset value before the widget re-renders, which is the correct pattern):
-
-All verified. Here are both complete files.
-
-**File A — replace `lib/theme.py`**
-
-```python
 """
 Premium visual theme for El Nivel Bar & Lounge.
 Import and call inject_theme() once at the top of every page file,
@@ -195,6 +162,3 @@ div[data-testid="stSuccess"] p, div[data-testid="stInfo"] p { color: #e6dcc4 !im
 
 def inject_theme():
     st.markdown(f"<style>{PREMIUM_CSS}</style>", unsafe_allow_html=True)
-```
-
-**File B — replace `guest/home.py`**
