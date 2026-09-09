@@ -2,9 +2,10 @@
 Cart and checkout now live INLINE on the main page (tap the cart banner
 to expand it) instead of only in the sidebar, so it's reachable without
 needing to know the sidebar exists. Same DB logic, same WhatsApp flow,
-same tip-to-waiter linking as before. Menu/table/staff lookups are now
-cached briefly so tapping a quantity doesn't re-hit the database (and
-the network round-trip to Supabase) on every single interaction.
+same tip-to-waiter linking as before. Menu/table/staff lookups are cached
+briefly so tapping a quantity doesn't re-hit the database on every tap,
+and cart items now show their real quantity (not a hardcoded 0) and can
+be removed individually from the checkout panel.
 """
 import streamlit as st
 from lib.db import query, execute
@@ -43,7 +44,7 @@ def get_waiter_staff():
 def get_menu_items(category):
     """Cached for 30s -- the menu rarely changes mid-session, and without
     this, every tap on a quantity +/- button re-queries Supabase over the
-    network (Uganda -> Frankfurt), which is what caused the ~20s lag
+    network (Uganda -> Frankfurt), which contributed to the sluggish feel
     guests were seeing after tapping an item."""
     return query(
         "select * from menu_items where category = %s and is_available = true order by subcategory, name",
@@ -74,17 +75,23 @@ def render_sidebar_note():
 
 
 def render_checkout_panel():
-    """Full checkout flow -- cart items, service type, optional tip with
-    waiter selection, WhatsApp send button. Rendered INLINE on the main
-    page when the cart banner is tapped open."""
+    """Full checkout flow -- cart items (each removable), service type,
+    optional tip with waiter selection, WhatsApp send button. Rendered
+    INLINE on the main page when the cart banner is tapped open."""
     cart = st.session_state.cart
     if not cart:
         return
 
+    st.markdown("<div class='checkout-panel'>", unsafe_allow_html=True)
+    st.markdown("#### Your Order")
+
     subtotal = 0
     cart_items = []
     max_wait = 0
-    for c in cart.values():
+    # Iterate over a fixed snapshot of item_ids so removing one mid-loop
+    # (via the button below) doesn't change the dict while iterating it.
+    for item_id in list(cart.keys()):
+        c = cart[item_id]
         line_total = c["price"] * c["quantity"]
         subtotal += line_total
         max_wait = max(max_wait, c["estimated_minutes"])
@@ -92,10 +99,18 @@ def render_checkout_panel():
             {"name": c["name"], "quantity": c["quantity"], "unit_price": c["price"], "line_total": line_total}
         )
 
-    st.markdown("<div class='checkout-panel'>", unsafe_allow_html=True)
-    st.markdown("#### Your Order")
-    for c in cart_items:
-        st.write(f"{c['quantity']} × {c['name']} — {format_ugx(c['line_total'])}")
+        row_col1, row_col2 = st.columns([4, 1])
+        with row_col1:
+            st.write(f"{c['quantity']} × {c['name']} — {format_ugx(line_total)}")
+        with row_col2:
+            if st.button("✕", key=f"remove_{item_id}", help="Remove this item"):
+                del st.session_state.cart[item_id]
+                # Also reset the menu list's own number_input for this item
+                # so it visually shows 0 again next time the menu renders.
+                qty_key = f"qty_{item_id}"
+                if qty_key in st.session_state:
+                    st.session_state[qty_key] = 0
+                st.rerun()
 
     st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
     st.markdown(
@@ -230,6 +245,12 @@ else:
             desc = it.get("description") or ""
             desc_html = f"<div class='item-desc'>{desc}</div>" if desc else ""
 
+            # Read any existing cart quantity for this item so the widget
+            # shows what's actually in the cart instead of always resetting
+            # to 0 -- a hardcoded value=0 here previously fought Streamlit's
+            # own session-state tracking and caused a sluggish, delayed feel.
+            existing_qty = st.session_state.cart.get(it["id"], {}).get("quantity", 0)
+
             col_card, col_qty = st.columns([3.2, 1])
             with col_card:
                 st.markdown(
@@ -242,7 +263,8 @@ else:
                 )
             with col_qty:
                 qty = st.number_input(
-                    "Qty", min_value=0, max_value=20, value=0, key=f"qty_{it['id']}", label_visibility="collapsed"
+                    "Qty", min_value=0, max_value=20, value=existing_qty,
+                    key=f"qty_{it['id']}", label_visibility="collapsed"
                 )
             if qty > 0:
                 st.session_state.cart[it["id"]] = {
