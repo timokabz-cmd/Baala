@@ -1,200 +1,256 @@
-Good, useful to know it's not just your logged-in view — let's fix both properly.
-
-**1. Fork/GitHub bar** — I was wrong to assume this only shows to you. This is Streamlit Cloud's **"Hosted by Streamlit" toolbar**, which appears to *everyone* by default, not just the owner. It's controllable via a setting, not something guests can dismiss. Let's hide it properly with the correct CSS target (my earlier `[data-testid="stHeader"]` fix handled the header but missed this specific toolbar element, which Streamlit renders in a different container).
-
-**2. Cart delay + no delete option** — let's dig into why caching alone didn't fix the delay, and add a proper remove button per cart item.
-
-Let's fix the toolbar first:
-
-That confirms it — I never targeted the actual toolbar element (`stToolbar` / `stDeployButton` / viewer badge), only the header bar. Let's add the correct selectors:
-
-Now let's tackle the cart delay properly. The caching I added should have helped the *menu query*, but the real bottleneck may be something else — every widget interaction in Streamlit re-runs the **entire script**, including all the `st.markdown` HTML rendering for every single menu card (30+ items), not just the DB query. Let's check how many items are actually rendering per category, since that itself could be the lag if there's no pagination:
-
-The bar menu alone has ~100+ drink items across all those insert blocks. That's a lot of `st.markdown` + `st.number_input` widget pairs rendering on every single rerun — likely the real cause of the lag, more than the DB query itself. Let's fix this properly with Streamlit's `st.form`, which batches all the quantity inputs and only reruns once, on submit, rather than on every single `+` tap:
-
-Actually, wrapping the whole menu in a form changes behavior significantly (no live item-by-item feedback), which may not be what you want. A better, more surgical fix: since Bar has ~100 items but a guest only views one category at a time (Restaurant *or* Bar), the real fix is to **not render number inputs for items with 0 quantity as separate always-live widgets** — but actually, the simplest true fix for perceived speed is different: **the delay you're describing (~20 sec) is far larger than normal Streamlit rerun overhead** even for 100 widgets. This smells like it's still a network call happening somewhere per-tap. Let me check the full render loop for anything still querying live:
-
-Found the real bug — this is a critical one: **`value=0` is hardcoded** on every `number_input`. That means every rerun resets the widget back to displaying `0`, ignoring `st.session_state[f"qty_{it['id']}"]` which Streamlit already tracks automatically via the `key`. There's no explicit network delay bug — the actual problem is a **state/rerender conflict**: Streamlit is fighting itself between the hardcoded `value=0` and the widget's own session-state-backed value, which can cause exactly this kind of sluggish, delayed-looking behavior as it reconciles on each rerun.
-
-Let's fix this properly and add per-item delete/remove capability at the same time:
-
-Now let's add per-item remove buttons in the checkout panel itself, since that's the natural place a guest expects to edit their cart:
-
-Let's rebuild this section to include a remove (✕) button per line item, and make sure removing also resets the corresponding `qty_` widget key so the menu list reflects it correctly:
-
-There's a subtlety here: since `render_checkout_panel()` returns early if cart becomes empty, and we `del` mid-loop then `st.rerun()` immediately, that's safe — the rerun restarts the whole script fresh rather than continuing the now-stale loop. Let's verify:
-
-Clean. Let me do one more check — confirm the qty widget reset logic is safe (Streamlit disallows setting a widget's session-state key directly if the widget hasn't been instantiated yet in that run, but since we `st.rerun()` right after, the next full run will read the reset value before the widget re-renders, which is the correct pattern):
-
-All verified. Here are both complete files.
-
-**File A — replace `lib/theme.py`**
-
-```python
-"""
-Premium visual theme for El Nivel Bar & Lounge.
-Import and call inject_theme() once at the top of every page file,
-immediately after the imports (main.py already calls st.set_page_config,
-so no page should call it again).
+"""Premium guest-facing menu + cart + WhatsApp checkout for El Nivel.
+Cart and checkout now live INLINE on the main page (tap the cart banner
+to expand it) instead of only in the sidebar, so it's reachable without
+needing to know the sidebar exists. Same DB logic, same WhatsApp flow,
+same tip-to-waiter linking as before. Menu/table/staff lookups are now
+cached briefly so tapping a quantity doesn't re-hit the database (and
+the network round-trip to Supabase) on every single interaction.
 """
 import streamlit as st
+from lib.db import query, execute
+from lib.theme import inject_theme
+from lib.utils import format_ugx, generate_order_number, build_whatsapp_order_link
 
-PREMIUM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Jost:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+BUSINESS_NAME = "El Nivel Bar & Lounge"
+WHATSAPP_NUMBER = st.secrets.get("whatsapp_number", "256700000000")
 
-html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
+inject_theme()
 
-.stApp {
-    background: radial-gradient(1200px 620px at 50% -10%, #251a10 0%, #0f0c0a 55%) fixed;
-    color: #f2ead9;
-}
-
-#MainMenu, footer { visibility: hidden; }
-[data-testid="stHeader"] {
-    background: transparent;
-}
-/* Keep the sidebar toggle control visible and tappable -- the previous
-   rule hid the entire header, which also hid this button, locking users
-   out of the sidebar (cart, order status, staff/admin login) entirely. */
-[data-testid="stHeader"] button {
-    visibility: visible !important;
-    color: #e6c87a !important;
-}
-/* Hide Streamlit Cloud's own chrome: the Fork/GitHub/menu toolbar and
-   the "Hosted with Streamlit" viewer badge. These are separate elements
-   from stHeader, which is why they survived the earlier fix. */
-[data-testid="stToolbar"],
-[data-testid="stDecoration"],
-[data-testid="stStatusWidget"],
-.stAppDeployButton,
-[data-testid="stAppViewerBadge"],
-a[href*="streamlit.io"] {
-    visibility: hidden !important;
-    display: none !important;
-}
-
-.main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
-@media (max-width: 640px) {
-    .main .block-container { padding-left: 1rem; padding-right: 1rem; }
-}
-
-h1, h2, h3 {
-    font-family: 'Playfair Display', Georgia, serif !important;
-    color: #e6c87a !important;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-}
-p, span, label, .stMarkdown, .stCaption, div[data-testid="stCaptionContainer"], small {
-    color: #cbbb9d;
-}
-
-.hero-eyebrow {
-    letter-spacing: 0.42em; text-transform: uppercase; color: #8a7a5e;
-    font-size: 0.68rem; font-weight: 500;
-}
-.hero-title {
-    font-family: 'Playfair Display', serif; font-size: 2.5rem; color: #e6c87a;
-    margin: 0.25rem 0 0; line-height: 1.08; font-weight: 600;
-}
-.hero-sub {
-    color: #a89880; font-weight: 300; letter-spacing: 0.18em;
-    font-size: 0.78rem; text-transform: uppercase; margin-top: 0.4rem;
-}
-.gold-rule {
-    height: 1px; border: none; margin: 1.2rem 0;
-    background: linear-gradient(90deg, transparent, rgba(201,162,39,0.55), transparent);
-}
-.table-badge {
-    display: inline-block; border: 1px solid rgba(201,162,39,0.45); color: #e6c87a;
-    border-radius: 999px; padding: 0.32rem 1rem; font-size: 0.75rem;
-    letter-spacing: 0.16em; text-transform: uppercase; margin-top: 0.9rem;
-}
-
-.premium-label {
-    font-size: 0.7rem; letter-spacing: 0.3em; text-transform: uppercase;
-    color: #a89880; margin: 1.7rem 0 0.7rem; font-weight: 500;
-}
-.menu-card {
-    background: linear-gradient(160deg, #1d1610 0%, #130e0a 100%);
-    border: 1px solid rgba(201,162,39,0.16);
-    border-radius: 14px; padding: 0.85rem 1.1rem; min-height: 88px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-}
-.item-name { font-family: 'Playfair Display', serif; color: #e6c87a; font-size: 1.06rem; font-weight: 600; }
-.item-desc { color: #9d8d72; font-size: 0.84rem; font-weight: 300; margin-top: 0.15rem; }
-.item-price { color: #c9a227; letter-spacing: 0.06em; font-size: 0.92rem; font-weight: 500; margin-top: 0.3rem; }
-
-div[role="radiogroup"] {
-    gap: 0.4rem; background: rgba(0,0,0,0.3); padding: 0.3rem;
-    border-radius: 999px; border: 1px solid rgba(201,162,39,0.14);
-}
-div[role="radiogroup"] label { border-radius: 999px !important; padding: 0.3rem 1rem !important; border: 1px solid transparent; }
-div[role="radiogroup"] label p { color: #d8cbaa !important; font-weight: 400; }
-div[role="radiogroup"] label:has(input:checked) { background: linear-gradient(135deg, #e6c87a, #c9a227) !important; }
-div[role="radiogroup"] label:has(input:checked) p { color: #171106 !important; font-weight: 600; }
-
-.stButton > button {
-    background: linear-gradient(135deg, #e6c87a 0%, #c9a227 100%) !important;
-    color: #171106 !important; border: none !important; border-radius: 10px !important;
-    font-family: 'Jost', sans-serif !important; letter-spacing: 0.08em;
-    font-weight: 600 !important; box-shadow: 0 4px 18px rgba(201,162,39,0.28);
-    transition: filter 0.15s ease;
-}
-/* Force dark text on ALL inner elements of the button -- Streamlit wraps
-   the label in nested <p>/<div> tags that otherwise inherit the lighter
-   body text color and wash out against the gold background. */
-.stButton > button, .stButton > button * {
-    color: #171106 !important;
-}
-.stButton > button:hover { filter: brightness(1.08); }
-.stButton > button:hover, .stButton > button:hover * { color: #171106 !important; }
-.stButton > button:active { filter: brightness(0.96); }
-
-/* Inline checkout panel (opened from the on-page cart banner) */
-.checkout-panel {
-    background: linear-gradient(160deg, #1d1610 0%, #130e0a 100%);
-    border: 1px solid rgba(201,162,39,0.28);
-    border-radius: 14px;
-    padding: 1rem 1.1rem;
-    margin: 0.6rem 0 1.2rem;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-}
-
-section[data-testid="stSidebar"] {
-    background: #0b0806;
-    border-right: 1px solid rgba(201,162,39,0.12);
-}
-section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3 { color: #e6c87a !important; }
-section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] .stCaption {
-    color: #cbbb9d !important;
-}
-.stSidebar .gold-rule { margin: 0.8rem 0; }
-
-div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input,
-div[data-testid="stSelectbox"] > div, div[data-baseweb="select"] > div {
-    color: #f2ead9 !important; background-color: #1c150f !important;
-    border: 1px solid rgba(201,162,39,0.28) !important; border-radius: 8px !important;
-}
-div[data-testid="stNumberInput"] { width: 92px; }
-div[data-testid="stNumberInput"] button { color: #c9a227 !important; }
-div[data-baseweb="checkbox"] span { color: #cbbb9d !important; }
-div[data-baseweb="checkbox"] > div:first-child { border-color: #c9a227 !important; }
-hr { border-color: rgba(201,162,39,0.14) !important; }
-
-div[data-testid="stInfo"] {
-    background: rgba(201,162,39,0.08); border: 1px solid rgba(201,162,39,0.25);
-}
-div[data-testid="stSuccess"] {
-    background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.3);
-}
-div[data-testid="stSuccess"] p, div[data-testid="stInfo"] p { color: #e6dcc4 !important; }
-"""
+if "cart" not in st.session_state:
+    st.session_state.cart = {}
+if "order_number_last" not in st.session_state:
+    st.session_state.order_number_last = None
+if "show_checkout" not in st.session_state:
+    st.session_state.show_checkout = False
 
 
-def inject_theme():
-    st.markdown(f"<style>{PREMIUM_CSS}</style>", unsafe_allow_html=True)
-```
+@st.cache_data(ttl=60)
+def get_table_by_slug(slug):
+    """Cached -- table info almost never changes mid-session."""
+    rows = query("select * from tables where qr_slug = %s and is_active = true", (slug,))
+    return rows[0] if rows else None
 
-**File B — replace `guest/home.py`**
+
+@st.cache_data(ttl=30)
+def get_waiter_staff():
+    """Cached -- avoids a DB round-trip every time the tip checkbox area re-renders."""
+    return query(
+        "select * from staff where is_active = true and role in ('waiter','bartender') order by name"
+    )
+
+
+@st.cache_data(ttl=30)
+def get_menu_items(category):
+    """Cached for 30s -- the menu rarely changes mid-session, and without
+    this, every tap on a quantity +/- button re-queries Supabase over the
+    network (Uganda -> Frankfurt), which is what caused the ~20s lag
+    guests were seeing after tapping an item."""
+    return query(
+        "select * from menu_items where category = %s and is_available = true order by subcategory, name",
+        (category,),
+    )
+
+
+table_slug = st.query_params.get("table", None)
+current_table = get_table_by_slug(table_slug) if table_slug else None
+
+
+def render_sidebar_note():
+    """Sidebar now just confirms cart status and points to the on-page
+    checkout -- the full checkout flow lives inline on the main page
+    (tap the cart banner) so it's reachable without opening the sidebar."""
+    with st.sidebar:
+        st.markdown("### Your Order")
+        st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+        cart = st.session_state.cart
+        if not cart:
+            st.caption("Your order is empty - tap + on any dish or drink.")
+        else:
+            count = sum(c["quantity"] for c in cart.values())
+            subtotal = sum(c["price"] * c["quantity"] for c in cart.values())
+            st.metric("Items", count)
+            st.metric("Subtotal", format_ugx(subtotal))
+            st.caption("Tap the 🛒 banner on the main page to review and checkout.")
+
+
+def render_checkout_panel():
+    """Full checkout flow -- cart items, service type, optional tip with
+    waiter selection, WhatsApp send button. Rendered INLINE on the main
+    page when the cart banner is tapped open."""
+    cart = st.session_state.cart
+    if not cart:
+        return
+
+    subtotal = 0
+    cart_items = []
+    max_wait = 0
+    for c in cart.values():
+        line_total = c["price"] * c["quantity"]
+        subtotal += line_total
+        max_wait = max(max_wait, c["estimated_minutes"])
+        cart_items.append(
+            {"name": c["name"], "quantity": c["quantity"], "unit_price": c["price"], "line_total": line_total}
+        )
+
+    st.markdown("<div class='checkout-panel'>", unsafe_allow_html=True)
+    st.markdown("#### Your Order")
+    for c in cart_items:
+        st.write(f"{c['quantity']} × {c['name']} — {format_ugx(c['line_total'])}")
+
+    st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='font-family:Playfair Display,serif;color:#e6c87a;font-size:1.15rem;'>"
+        f"Subtotal &nbsp;·&nbsp; {format_ugx(subtotal)}</p>",
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Estimated wait ~{max_wait} min")
+
+    service_type = st.radio("Served as", ["Dine-in", "Takeaway"], horizontal=True, key="ck_service_type")
+
+    table_number = None
+    if service_type == "Dine-in":
+        table_number = current_table["label"] if current_table else st.text_input(
+            "Table number", key="ck_table_number"
+        )
+
+    st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+    st.caption("ADD A TIP (OPTIONAL)")
+    add_tip = st.checkbox("Add a tip for your server", key="ck_add_tip")
+    tip_amount = 0
+    waiter_id = None
+    if add_tip:
+        tip_amount = st.number_input("Tip amount (UGX)", min_value=0, step=1000, key="ck_tip_amount")
+        staff = get_waiter_staff()
+        if staff:
+            staff_options = {s["name"]: s["id"] for s in staff}
+            waiter_name = st.selectbox("Who served you?", list(staff_options.keys()), key="ck_waiter")
+            waiter_id = staff_options.get(waiter_name)
+        else:
+            st.caption("Tip will be recorded without a specific server.")
+
+    total = subtotal + tip_amount
+    if tip_amount:
+        st.markdown(
+            f"<p style='font-family:Playfair Display,serif;color:#e6c87a;font-size:1.1rem;'>"
+            f"Total incl. tip &nbsp;·&nbsp; {format_ugx(total)}</p>",
+            unsafe_allow_html=True,
+        )
+
+    notes = st.text_input("Notes for kitchen / bar (optional)", key="ck_notes")
+
+    if st.button("SEND ORDER VIA WHATSAPP", type="primary", use_container_width=True, key="ck_send"):
+        order_number = generate_order_number()
+        table_id = current_table["id"] if current_table else None
+        service_key = "dine_in" if service_type == "Dine-in" else "takeaway"
+
+        order_row = execute(
+            """insert into orders (order_number, table_id, service_type, status, subtotal, tip_amount, total, notes, waiter_id)
+               values (%s, %s, %s, 'pending', %s, %s, %s, %s, %s) returning id""",
+            (order_number, table_id, service_key, subtotal, tip_amount, total, notes, waiter_id),
+            returning=True,
+        )
+        order_id = order_row["id"]
+
+        for item_id, c in cart.items():
+            execute(
+                """insert into order_items (order_id, menu_item_id, item_name, unit_price, quantity, line_total)
+                   values (%s, %s, %s, %s, %s, %s)""",
+                (order_id, item_id, c["name"], c["price"], c["quantity"], c["price"] * c["quantity"]),
+            )
+            menu_row = query("select inventory_id from menu_items where id = %s", (item_id,), fetch="one")
+            if menu_row and menu_row.get("inventory_id"):
+                execute(
+                    "update inventory set quantity_on_hand = quantity_on_hand - %s, updated_at = now() where id = %s",
+                    (c["quantity"], menu_row["inventory_id"]),
+                )
+                execute(
+                    "insert into inventory_movements (inventory_id, change_qty, reason) values (%s, %s, 'sale')",
+                    (menu_row["inventory_id"], -c["quantity"]),
+                )
+
+        if tip_amount > 0 and waiter_id:
+            execute(
+                "insert into tips (order_id, staff_id, amount, method) values (%s, %s, %s, 'added_to_bill')",
+                (order_id, waiter_id, tip_amount),
+            )
+
+        label = table_number or "Takeaway"
+        link = build_whatsapp_order_link(WHATSAPP_NUMBER, order_number, label, cart_items, total, notes)
+        st.session_state.order_number_last = order_number
+        st.session_state.cart = {}
+        st.session_state.show_checkout = False
+        st.success(f"Order {order_number} placed!")
+        st.link_button("Open WhatsApp", link, use_container_width=True)
+        st.caption("Track it under My Order Status.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+render_sidebar_note()
+
+st.markdown("<p class='hero-eyebrow'>Kiwatule · Kampala</p>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 class='hero-title'>El Nivel<br>Bar &amp; Lounge</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown("<p class='hero-sub'>Scan · Order · Sip</p>", unsafe_allow_html=True)
+if current_table:
+    st.markdown(f"<span class='table-badge'>Table {current_table['label']}</span>", unsafe_allow_html=True)
+st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+
+category = st.radio("Browse", ["Restaurant", "Bar"], horizontal=True, label_visibility="collapsed")
+cat_key = "restaurant" if category == "Restaurant" else "bar"
+
+# ---------- tappable cart banner -- opens checkout INLINE on this page ----------
+if st.session_state.cart:
+    _count = sum(c["quantity"] for c in st.session_state.cart.values())
+    _subtotal = sum(c["price"] * c["quantity"] for c in st.session_state.cart.values())
+    _label = "🛒  Hide checkout ▲" if st.session_state.show_checkout else f"🛒 {_count} item{'s' if _count != 1 else ''} · {format_ugx(_subtotal)} — tap to checkout ▼"
+    if st.button(_label, key="cart_toggle", use_container_width=True):
+        st.session_state.show_checkout = not st.session_state.show_checkout
+        st.rerun()
+
+    if st.session_state.show_checkout:
+        render_checkout_panel()
+    st.markdown("<hr class='gold-rule'>", unsafe_allow_html=True)
+
+items = get_menu_items(cat_key)
+
+if not items:
+    st.info("This menu is being refreshed - please ask our team for today's selection.")
+else:
+    groups = {}
+    for it in items:
+        groups.setdefault(it.get("subcategory") or "Menu", []).append(it)
+
+    for group_name, group_items in groups.items():
+        st.markdown(f"<p class='premium-label'>{group_name}</p>", unsafe_allow_html=True)
+        for it in group_items:
+            wait = it.get("estimated_minutes") or 5
+            desc = it.get("description") or ""
+            desc_html = f"<div class='item-desc'>{desc}</div>" if desc else ""
+
+            col_card, col_qty = st.columns([3.2, 1])
+            with col_card:
+                st.markdown(
+                    "<div class='menu-card'>"
+                    f"<div class='item-name'>{it['name']}</div>"
+                    f"{desc_html}"
+                    f"<div class='item-price'>{format_ugx(float(it['price']))} &nbsp;·&nbsp; ~{wait} min</div>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            with col_qty:
+                qty = st.number_input(
+                    "Qty", min_value=0, max_value=20, value=0, key=f"qty_{it['id']}", label_visibility="collapsed"
+                )
+            if qty > 0:
+                st.session_state.cart[it["id"]] = {
+                    "name": it["name"],
+                    "price": float(it["price"]),
+                    "quantity": qty,
+                    "estimated_minutes": wait,
+                }
+            elif it["id"] in st.session_state.cart:
+                del st.session_state.cart[it["id"]]
+        st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
