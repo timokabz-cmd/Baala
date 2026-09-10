@@ -20,12 +20,28 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
 [data-testid="stHeader"] {
     background: transparent;
 }
-/* Keep the sidebar toggle control visible and tappable -- the previous
-   rule hid the entire header, which also hid this button, locking users
-   out of the sidebar (cart, order status, staff/admin login) entirely. */
-[data-testid="stHeader"] button {
+/* Keep the sidebar collapse/expand control visible and tappable.
+   Force visibility + size + color on the button AND everything inside it
+   (the icon is an <svg>, so setting color on the <button> alone does
+   nothing -- the svg needs its own visibility/fill, and we also guard
+   against it being collapsed to 0 size by an inherited rule). */
+[data-testid="stHeader"] button,
+[data-testid="collapsedControl"],
+[data-testid="collapsedControl"] * ,
+[data-testid="stHeader"] button * {
     visibility: visible !important;
+    opacity: 1 !important;
+    display: flex !important;
+    width: auto !important;
+    height: auto !important;
     color: #e6c87a !important;
+}
+[data-testid="stHeader"] svg,
+[data-testid="collapsedControl"] svg {
+    fill: #e6c87a !important;
+    stroke: #e6c87a !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 /* Hide Streamlit Cloud's own chrome: the Fork/GitHub/menu toolbar and
    the "Hosted with Streamlit" viewer badge. These are separate elements
