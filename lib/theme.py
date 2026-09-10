@@ -16,45 +16,13 @@ html, body, [class*="css"] { font-family: 'Jost', sans-serif; }
     color: #f2ead9;
 }
 
-#MainMenu, footer { visibility: hidden; }
-[data-testid="stHeader"] {
-    background: transparent;
-}
-/* Keep the sidebar collapse/expand control visible and tappable.
-   Force visibility + size + color on the button AND everything inside it
-   (the icon is an <svg>, so setting color on the <button> alone does
-   nothing -- the svg needs its own visibility/fill, and we also guard
-   against it being collapsed to 0 size by an inherited rule). */
-[data-testid="stHeader"] button,
-[data-testid="collapsedControl"],
-[data-testid="collapsedControl"] * ,
-[data-testid="stHeader"] button * {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: flex !important;
-    width: auto !important;
-    height: auto !important;
-    color: #e6c87a !important;
-}
-[data-testid="stHeader"] svg,
-[data-testid="collapsedControl"] svg {
-    fill: #e6c87a !important;
-    stroke: #e6c87a !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-/* Hide Streamlit Cloud's own chrome: the Fork/GitHub/menu toolbar and
-   the "Hosted with Streamlit" viewer badge. These are separate elements
-   from stHeader, which is why they survived the earlier fix. */
-[data-testid="stToolbar"],
-[data-testid="stDecoration"],
-[data-testid="stStatusWidget"],
-.stAppDeployButton,
-[data-testid="stAppViewerBadge"],
-a[href*="streamlit.io"] {
-    visibility: hidden !important;
-    display: none !important;
-}
+footer { visibility: hidden; }
+/* Header/toolbar/sidebar-toggle CSS removed entirely -- previous attempts
+   to selectively hide Streamlit Cloud's chrome while keeping the sidebar
+   collapse arrow visible kept breaking the arrow across Streamlit versions.
+   Leaving the header alone guarantees the arrow works; the Fork/GitHub
+   toolbar and "Hosted with Streamlit" badge will be visible again as a
+   trade-off. */
 
 .main .block-container { max-width: 640px; padding-top: 2.2rem; padding-bottom: 6rem; }
 @media (max-width: 640px) {
